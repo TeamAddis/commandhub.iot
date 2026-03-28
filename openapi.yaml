@@ -1,0 +1,224 @@
+openapi: 3.0.3
+info:
+  title: commandhub.iot
+  description: Local IoT gateway REST API — bridges iOS app to local MQTT broker on Raspberry Pi
+  version: 1.0.0
+
+servers:
+  - url: https://your-cloudflare-tunnel-url.com
+    description: Production (via Cloudflare Tunnel)
+  - url: http://localhost:8000
+    description: Local development
+
+paths:
+  /pump:
+    post:
+      summary: Control the pump
+      operationId: controlPump
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PumpControlRequest'
+      responses:
+        '200':
+          description: Pump command acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PumpStatusResponse'
+        '408':
+          description: Device did not respond in time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /pump/status:
+    get:
+      summary: Get pump status
+      operationId: getPumpStatus
+      responses:
+        '200':
+          description: Current pump status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PumpStatusResponse'
+        '408':
+          description: Device did not respond in time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /pump/runtime:
+    put:
+      summary: Set maximum pump runtime
+      operationId: setPumpRuntime
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PumpRuntimeRequest'
+      responses:
+        '200':
+          description: Runtime updated successfully
+        '400':
+          description: Value out of allowed range
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /alarms:
+    get:
+      summary: Get alarm configuration
+      operationId: getAlarms
+      responses:
+        '200':
+          description: Current alarm configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlarmStatusResponse'
+        '408':
+          description: Device did not respond in time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Set alarm configuration
+      operationId: setAlarms
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AlarmSetRequest'
+      responses:
+        '200':
+          description: Alarms updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlarmStatusResponse'
+        '408':
+          description: Device did not respond in time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /mcu/status:
+    get:
+      summary: Get MCU status
+      operationId: getMcuStatus
+      responses:
+        '200':
+          description: MCU status and firmware version
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/McuStatusResponse'
+        '408':
+          description: Device did not respond in time
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    PumpControlRequest:
+      type: object
+      required: [state]
+      properties:
+        state:
+          type: string
+          enum: [on, off]
+          example: on
+
+    PumpStatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [on, off]
+          example: off
+
+    PumpRuntimeRequest:
+      type: object
+      required: [maxPumpRuntime]
+      properties:
+        maxPumpRuntime:
+          type: integer
+          minimum: 1
+          maximum: 60000
+          description: Maximum pump runtime in milliseconds
+          example: 30000
+
+    Alarm:
+      type: object
+      properties:
+        hour:
+          type: integer
+          minimum: 0
+          maximum: 23
+          example: 6
+        minute:
+          type: integer
+          minimum: 0
+          maximum: 59
+          example: 0
+        enabled:
+          type: boolean
+          example: true
+        valid:
+          type: boolean
+          example: true
+
+    AlarmSetRequest:
+      type: object
+      required: [alarms]
+      properties:
+        alarms:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alarm'
+          minItems: 1
+          maxItems: 4
+
+    AlarmStatusResponse:
+      type: object
+      properties:
+        alarms:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alarm'
+
+    McuStatusResponse:
+      type: object
+      properties:
+        version:
+          type: integer
+          example: 1
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          example: Device did not respond within timeout period
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+security:
+  - ApiKeyAuth: []
