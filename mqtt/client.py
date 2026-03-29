@@ -7,6 +7,7 @@ import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
 import config
+from logger.transaction_log import transaction_log
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,7 @@ class MQTTBridge:
     def connect(self):
         self._client.connect(config.MQTT_BROKER_HOST, config.MQTT_BROKER_PORT)
         self._client.loop_start()
+        self._client.subscribe("bloom/#")
 
     def disconnect(self):
         self._client.loop_stop()
@@ -52,13 +54,16 @@ class MQTTBridge:
             self._reconnect()
 
     def _on_message(self, client, userdata, message):
+        try:
+            payload = json.loads(message.payload.decode())
+        except json.JSONDecodeError:
+            payload = message.payload.decode()
+
+        transaction_log.add_mqtt_event(message.topic, payload)
+
         with self._lock:
             if self._response_topic and message.topic == self._response_topic:
-                try:
-                    self._response_payload = json.loads(message.payload.decode())
-                except json.JSONDecodeError:
-                    logger.error("Failed to decode MQTT message on topic %s", message.topic)
-                    self._response_payload = None
+                self._response_payload = payload if isinstance(payload, dict) else None
                 self._response_event.set()
 
     # ------------------------------------------------------------------
@@ -80,7 +85,9 @@ class MQTTBridge:
     # Public API
     # ------------------------------------------------------------------
 
-    def publish(self, topic: str, payload: dict):
+    def publish(self, topic: str, payload: dict, log_entry=None):
+        if log_entry:
+            transaction_log.add_mqtt_step(log_entry, "publish", topic, payload)
         self._client.publish(topic, json.dumps(payload))
 
     def publish_and_wait(
@@ -89,6 +96,7 @@ class MQTTBridge:
         response_topic: str,
         payload: dict,
         timeout: int | None = None,
+        log_entry=None,
     ) -> dict | None:
         if timeout is None:
             timeout = config.MQTT_RESPONSE_TIMEOUT
@@ -99,6 +107,8 @@ class MQTTBridge:
             self._response_event.clear()
 
         self._client.subscribe(response_topic)
+        if log_entry:
+            transaction_log.add_mqtt_step(log_entry, "publish", command_topic, payload)
         self._client.publish(command_topic, json.dumps(payload))
 
         received = self._response_event.wait(timeout=timeout)
@@ -112,6 +122,9 @@ class MQTTBridge:
         if not received:
             logger.warning("Timeout waiting for response on %s", response_topic)
             return None
+
+        if log_entry and result:
+            transaction_log.add_mqtt_step(log_entry, "receive", response_topic, result)
 
         return result
 
