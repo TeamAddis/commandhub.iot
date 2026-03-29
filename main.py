@@ -5,7 +5,7 @@ from fastapi.security.api_key import APIKeyHeader
 
 import config
 from mqtt.client import mqtt_bridge
-from routers import pump, alarms, mcu
+from routers import pump, alarms, mcu, logs
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -34,3 +34,4 @@ app = FastAPI(
 app.include_router(pump.router)
 app.include_router(alarms.router)
 app.include_router(mcu.router)
+app.include_router(logs.router)
