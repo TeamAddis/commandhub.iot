@@ -1,7 +1,9 @@
 import json
+import secrets
 
-from fastapi import APIRouter, Security, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.security.api_key import APIKeyHeader
 
 import config
@@ -10,12 +12,34 @@ from logger.transaction_log import transaction_log
 router = APIRouter(tags=["logs"])
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+_http_basic = HTTPBasic(auto_error=False)
 
 
-def _verify_api_key(api_key: str = Security(api_key_header)):
-    if api_key != config.API_KEY:
-        raise HTTPException(status_code=403, detail="Invalid or missing API key")
-    return api_key
+def _verify_logs_auth(
+    api_key: str = Depends(api_key_header),
+    credentials: HTTPBasicCredentials = Depends(_http_basic),
+):
+    # Allow access via X-API-Key header (bot/curl access)
+    if api_key is not None:
+        if secrets.compare_digest(api_key, config.API_KEY):
+            return
+        raise HTTPException(status_code=403, detail="Invalid API key")
+
+    # Allow access via HTTP Basic Auth (browser access)
+    logs_user = config.LOGS_USER
+    logs_password = config.LOGS_PASSWORD
+    if credentials is not None and logs_user and logs_password:
+        user_ok = secrets.compare_digest(credentials.username, logs_user)
+        pass_ok = secrets.compare_digest(credentials.password, logs_password)
+        if user_ok and pass_ok:
+            return
+
+    # No valid auth — issue a Basic Auth challenge so browsers prompt for credentials
+    raise HTTPException(
+        status_code=401,
+        detail="Authentication required",
+        headers={"WWW-Authenticate": 'Basic realm="commandhub.iot logs"'},
+    )
 
 
 def _fmt_payload(payload) -> str:
@@ -95,7 +119,7 @@ def _build_mqtt_html(events) -> str:
 
 
 @router.get("/logs", response_class=HTMLResponse, include_in_schema=False)
-def get_logs(api_key: str = Security(_verify_api_key)):
+def get_logs(_auth=Depends(_verify_logs_auth)):
     transactions = transaction_log.get_transactions()
     mqtt_events = transaction_log.get_mqtt_events()
 

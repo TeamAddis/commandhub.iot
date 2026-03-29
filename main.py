@@ -28,10 +28,11 @@ app = FastAPI(
     description="Local IoT gateway API",
     version="1.0.0",
     lifespan=lifespan,
-    dependencies=[Security(verify_api_key)],
 )
 
-app.include_router(pump.router)
-app.include_router(alarms.router)
-app.include_router(mcu.router)
+_api_key_dep = [Security(verify_api_key)]
+
+app.include_router(pump.router, dependencies=_api_key_dep)
+app.include_router(alarms.router, dependencies=_api_key_dep)
+app.include_router(mcu.router, dependencies=_api_key_dep)
 app.include_router(logs.router)
